@@ -5,22 +5,22 @@ canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
 const BLOCK_SIZE = 16;
-const CHUNK_SIZE = 16; // X×Z
-const MAX_HEIGHT = 20; // Y-axis height
+const CHUNK_SIZE = 16; // X × Z
+const MAX_HEIGHT = 20; // Y-axis
 
-// Block colors
+// Colors
 const COLORS = {
-    grass: '#228B22',
-    dirt: '#8B4513',
-    stone: '#808080',
-    leaves: '#90EE90',
-    wood: '#D2B48C',
-    water: '#1E90FF'
+    grass:'#228B22',
+    dirt:'#8B4513',
+    stone:'#808080',
+    leaves:'#90EE90',
+    wood:'#D2B48C',
+    water:'#1E90FF'
 };
 
-// Smooth pseudo-noise for terrain height
-function smoothNoise(x, z) {
-    return (Math.sin(x*0.1 + z*0.15) + Math.sin(x*0.05 + z*0.1)*0.5 +1)*0.5;
+// Smooth pseudo-noise terrain
+function smoothNoise(x,z){
+    return (Math.sin(x*0.1+z*0.15) + Math.sin(x*0.05+z*0.1)*0.5 + 1)*0.5;
 }
 
 // 3D world array
@@ -41,7 +41,7 @@ for(let x=0;x<CHUNK_SIZE;x++){
         let height = Math.floor(smoothNoise(x,z)*10)+5;
 
         for(let y=0;y<height;y++){
-            if(Math.random()<0.05) continue; // vertical gaps/caves
+            if(y>0 && Math.random()<0.05) continue; // vertical gaps/caves
 
             let type='stone';
             if(y>=height-3 && y<height-1) type='dirt';
@@ -65,7 +65,7 @@ for(let x=0;x<CHUNK_SIZE;x++){
             for(let lx=-1;lx<=1;lx++){
                 for(let ly=0;ly<3;ly++){
                     for(let lz=-1;lz<=1;lz++){
-                        let nx=x+lx, ny=height+trunkHeight+ly, nz=z+lz;
+                        let nx = x+lx, ny = height+trunkHeight+ly, nz = z+lz;
                         if(nx>=0 && nx<CHUNK_SIZE && ny<MAX_HEIGHT && nz>=0 && nz<CHUNK_SIZE){
                             world[nx][ny][nz] = {type:'leaves', solid:true, semi:true};
                         }
@@ -76,12 +76,27 @@ for(let x=0;x<CHUNK_SIZE;x++){
     }
 }
 
+// Compute top terrain height per slice (for cave rendering)
+let topHeight = [];
+for(let x=0;x<CHUNK_SIZE;x++){
+    topHeight[x] = [];
+    for(let z=0;z<CHUNK_SIZE;z++){
+        topHeight[x][z] = 0;
+        for(let y=MAX_HEIGHT-1;y>=0;y--){
+            if(world[x][y][z]){
+                topHeight[x][z] = y+1;
+                break;
+            }
+        }
+    }
+}
+
 // Player spawn
 let spawnX=2, spawnZ=0;
 let spawnY = 0;
 for(let y=MAX_HEIGHT-1;y>=0;y--){
     if(world[spawnX][y][spawnZ] && world[spawnX][y][spawnZ].solid){
-        spawnY = canvas.height - (y+1)*BLOCK_SIZE - 30; // player height=30
+        spawnY = canvas.height - (y+1)*BLOCK_SIZE - 30;
         break;
     }
 }
@@ -98,21 +113,22 @@ let player = {
     targetZ: spawnZ
 };
 
+// Camera
+let cameraX = 0;
+
 // Controls
 const keys = {};
-document.addEventListener('keydown', e => keys[e.key]=true);
-document.addEventListener('keyup', e => keys[e.key]=false);
-
-// Slice scrolling (scroll up = forward)
+document.addEventListener('keydown', e=>keys[e.key]=true);
+document.addEventListener('keyup', e=>keys[e.key]=false);
 window.addEventListener('wheel', e=>{
-    player.targetZ -= Math.sign(e.deltaY); // invert scroll
+    player.targetZ -= Math.sign(e.deltaY); // scroll up → forward
     if(player.targetZ<0) player.targetZ=0;
     if(player.targetZ>CHUNK_SIZE-1) player.targetZ=CHUNK_SIZE-1;
 });
 
 // Game loop
 function update(){
-    player.z += (player.targetZ - player.z)*0.2; // smooth slice scrolling
+    player.z += (player.targetZ - player.z)*0.2;
 
     // Horizontal movement
     if(keys['ArrowLeft']||keys['a']) player.x -= 3;
@@ -128,7 +144,7 @@ function update(){
     player.vy += 0.5;
     player.y += player.vy;
 
-    // Collision with solid blocks in current slice
+    // Collision
     player.onGround=false;
     let sliceZ = Math.round(player.z);
     for(let x=0;x<CHUNK_SIZE;x++){
@@ -140,7 +156,6 @@ function update(){
             let by = canvas.height-(y+1)*BLOCK_SIZE;
 
             if(block.type==='leaves' && block.semi){
-                // Semi-solid top 8px
                 if(player.x+player.w>bx && player.x<bx+BLOCK_SIZE &&
                    player.y+player.h>by+8 && player.y<by+BLOCK_SIZE){
                     player.y = by+8 - player.h;
@@ -148,7 +163,6 @@ function update(){
                     player.onGround=true;
                 }
             } else {
-                // Fully solid
                 if(player.x+player.w>bx && player.x<bx+BLOCK_SIZE &&
                    player.y+player.h>by && player.y<by+BLOCK_SIZE){
                     player.y = by - player.h;
@@ -159,39 +173,77 @@ function update(){
         }
     }
 
+    // Respawn if fallen
+    if(player.y > canvas.height){
+        player.x = spawnX*BLOCK_SIZE;
+        player.y = spawnY;
+        player.vy = 0;
+        player.z = spawnZ;
+        player.targetZ = spawnZ;
+    }
+
+    // Update camera
+    cameraX = player.x - canvas.width/2 + player.w/2;
+
     draw();
     requestAnimationFrame(update);
 }
 
-// Draw function
+// Draw
 function draw(){
     // Sky
     ctx.fillStyle = '#87CEFA';
     ctx.fillRect(0,0,canvas.width,canvas.height);
 
-    // Draw blocks in current slice
     let sliceZ = Math.round(player.z);
+
     for(let x=0;x<CHUNK_SIZE;x++){
         for(let y=0;y<MAX_HEIGHT;y++){
             let block = world[x][y][sliceZ];
-            if(!block) continue;
-            let bx = x*BLOCK_SIZE;
+            let bx = x*BLOCK_SIZE - cameraX;
             let by = canvas.height-(y+1)*BLOCK_SIZE;
-            ctx.fillStyle = COLORS[block.type] || '#AAAAAA';
-            ctx.fillRect(bx,by,BLOCK_SIZE,BLOCK_SIZE);
+
+            // Draw block or cave black
+            if(block){
+                if(block.type==='wood'){
+                    ctx.fillStyle = COLORS.wood;
+                    ctx.fillRect(bx,by,BLOCK_SIZE,BLOCK_SIZE);
+                } else if(block.type==='leaves'){
+                    let leftSlice = sliceZ-1>=0?world[x][y][sliceZ-1]:null;
+                    let rightSlice = sliceZ+1<CHUNK_SIZE?world[x][y][sliceZ+1]:null;
+                    let showLeaf = true;
+
+                    // Only show leaves if part of tree slice
+                    if((leftSlice && leftSlice.type==='leaves')||(rightSlice && rightSlice.type==='leaves')){
+                        showLeaf=true;
+                    }
+
+                    if(showLeaf){
+                        ctx.fillStyle = COLORS.leaves;
+                        ctx.fillRect(bx,by,BLOCK_SIZE,BLOCK_SIZE);
+                    }
+                } else {
+                    ctx.fillStyle = COLORS[block.type] || '#AAAAAA';
+                    ctx.fillRect(bx,by,BLOCK_SIZE,BLOCK_SIZE);
+                }
+            } else if(y < topHeight[x][sliceZ]){
+                // Cave black
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(bx,by,BLOCK_SIZE,BLOCK_SIZE);
+            }
         }
     }
 
-    // Draw player (split upper/lower)
+    // Player
     ctx.fillStyle = '#008080'; // lower teal
-    ctx.fillRect(player.x, player.y + player.h/2, player.w, player.h/2);
+    ctx.fillRect(player.x - cameraX, player.y + player.h/2, player.w, player.h/2);
     ctx.fillStyle = '#D2B48C'; // upper tan
-    ctx.fillRect(player.x, player.y, player.w, player.h/2);
+    ctx.fillRect(player.x - cameraX, player.y, player.w, player.h/2);
 
-    // Slice info (1–16)
+    // Slice info
     ctx.fillStyle = '#000';
     ctx.font = '16px Arial';
-    ctx.fillText('Slice: ' + (sliceZ+1), 10, 20);
+    ctx.fillText('Slice: ' + (sliceZ+1),10,20);
 }
 
 update();
