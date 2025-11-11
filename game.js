@@ -1,145 +1,131 @@
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+canvas.width = 640;
+canvas.height = 360;
 
-canvas.width = 512; // 16 blocks * 32px
-canvas.height = 512; // 16 blocks * 32px
+// Constants
+const BLOCK_SIZE = 16;
+const SLICE_WIDTH = 16; // blocks per slice
+const VIEW_HEIGHT = canvas.height;
+const VIEW_WIDTH = canvas.width;
 
-const BLOCK_SIZE = 32;
-const SLICE_COUNT = 16;
-const WORLD_WIDTH = 16;
-const WORLD_HEIGHT = 16;
+// Terrain & slice storage
+let slices = {}; // keys are slice indices
+let player = { x: 8, y: 0, slice: 0, width: 16, height: 30 };
 
-// Block types
-const BLOCKS = {
-    air: null,
-    grass: 'green',
-    dirt: 'brown',
-    stone: 'grey',
-    leaves: 'lightgreen',
-    wood: 'saddlebrown',
-    water: 'blue'
-};
+// Noise function for terrain height
+function pseudoNoise(x) {
+    return Math.floor(8 + 4 * Math.sin(x * 0.5) + Math.sin(x * 0.25) * 2);
+}
 
-// Player
-let player = {
-    x: 8, y: 0, z: 0, // grid coordinates
-    px: 0, py: 0,      // pixel position
-    width: BLOCK_SIZE,
-    height: 30,
-    colorTop: 'tan',
-    colorBottom: 'teal',
-    dy: 0
-};
-
-// World: slice[z][x][y] = block type
-let world = [];
-
-function generateWorld() {
-    for (let z = 0; z < SLICE_COUNT; z++) {
-        const slice = [];
-        for (let x = 0; x < WORLD_WIDTH; x++) {
-            const column = [];
-            const height = 4 + Math.floor(Math.random() * 5); // terrain height 4-8
-            for (let y = 0; y < WORLD_HEIGHT; y++) {
-                if (y < height - 1) column.push('dirt');
-                else if (y === height - 1) column.push('grass');
-                else column.push('air');
-            }
-            // Add a tree randomly
-            if (Math.random() < 0.2 && height < WORLD_HEIGHT - 4) {
-                column[height] = 'wood';
-                column[height + 1] = 'wood';
-                column[height + 2] = 'leaves';
-                column[height + 3] = 'leaves';
-            }
-            slice.push(column);
+// Generate a slice
+function generateSlice(index) {
+    if (slices[index]) return; // already exists
+    let slice = [];
+    for (let x = 0; x < SLICE_WIDTH; x++) {
+        let height = pseudoNoise(index * SLICE_WIDTH + x);
+        let column = [];
+        for (let y = 0; y < VIEW_HEIGHT / BLOCK_SIZE; y++) {
+            if (y > height) column.push("air");
+            else if (y === height) column.push("grass");
+            else if (y > height - 3) column.push("dirt");
+            else column.push("stone");
         }
-        world.push(slice);
+        // Add tree with small probability
+        if (Math.random() < 0.1 && height < (VIEW_HEIGHT / BLOCK_SIZE - 4)) {
+            column[height - 1] = "wood";
+            column[height - 2] = "leaves";
+            column[height - 3] = "leaves";
+        }
+        slice.push(column);
+    }
+    slices[index] = slice;
+}
+
+// Draw a slice
+function drawSlice(index, offsetX) {
+    generateSlice(index);
+    const slice = slices[index];
+    for (let x = 0; x < SLICE_WIDTH; x++) {
+        for (let y = 0; y < slice[x].length; y++) {
+            const block = slice[x][y];
+            if (block === "air") continue;
+            ctx.fillStyle = blockColor(block);
+            // subtle parallax for depth effect
+            ctx.fillRect(offsetX + x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+        }
     }
 }
 
-function drawSlice(z) {
-    ctx.fillStyle = 'lightblue'; // sky
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    for (let x = 0; x < WORLD_WIDTH; x++) {
-        for (let y = 0; y < WORLD_HEIGHT; y++) {
-            const block = world[z][x][y];
-            if (!block || block === 'air') continue;
-            if (block === 'leaves') ctx.globalAlpha = 0.6;
-            else ctx.globalAlpha = 1;
-
-            ctx.fillStyle = BLOCKS[block];
-            ctx.fillRect(x * BLOCK_SIZE, canvas.height - (y + 1) * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
-            ctx.globalAlpha = 1;
-        }
-    }
-
-    // Draw player
-    player.px = player.x * BLOCK_SIZE;
-    player.py = canvas.height - (player.y + 1) * BLOCK_SIZE - (player.height - BLOCK_SIZE);
-    ctx.fillStyle = player.colorTop;
-    ctx.fillRect(player.px, player.py, player.width, player.height / 2);
-    ctx.fillStyle = player.colorBottom;
-    ctx.fillRect(player.px, player.py + player.height / 2, player.width, player.height / 2);
-}
-
-function isSolid(x, y, z) {
-    if (x < 0 || x >= WORLD_WIDTH || y < 0 || y >= WORLD_HEIGHT || z < 0 || z >= SLICE_COUNT) return true;
-    const block = world[z][x][y];
-    return block && block !== 'air' && block !== 'water' && block !== 'leaves';
-}
-
-// Simple gravity
-function updatePlayer() {
-    player.dy += 0.5; // gravity
-    let newY = player.y + player.dy / BLOCK_SIZE;
-
-    if (player.dy > 0) { // falling
-        if (isSolid(player.x, Math.floor(newY), player.z)) {
-            player.y = Math.floor(newY);
-            player.dy = 0;
-        } else {
-            player.y = newY;
-        }
-    } else if (player.dy < 0) { // jumping
-        if (isSolid(player.x, Math.floor(newY), player.z)) {
-            player.dy = 0;
-        } else {
-            player.y = newY;
-        }
-    }
-
-    // Respawn if fall below
-    if (player.y < 0) {
-        player.x = 8; player.y = 10; player.z = 0; player.dy = 0;
+// Block colors
+function blockColor(block) {
+    switch(block) {
+        case "grass": return "#00FF00";
+        case "dirt": return "#8B4513";
+        case "stone": return "#808080";
+        case "wood": return "#A0522D";
+        case "leaves": return "rgba(144,238,144,0.7)"; // semi-transparent
+        default: return "#000000";
     }
 }
 
+// Draw player
+function drawPlayer() {
+    ctx.fillStyle = "#D2B48C"; // upper part tan
+    ctx.fillRect(player.x, player.y, player.width, player.height/2);
+    ctx.fillStyle = "#008080"; // lower part teal
+    ctx.fillRect(player.x, player.y + player.height/2, player.width, player.height/2);
+}
+
+// Main render
+function render() {
+    ctx.fillStyle = "#87CEFA"; // sky
+    ctx.fillRect(0,0,canvas.width, canvas.height);
+
+    // Determine slices to draw around player
+    const startSlice = player.slice - 2;
+    const endSlice = player.slice + 2;
+    for (let s = startSlice; s <= endSlice; s++) {
+        drawSlice(s, (s - player.slice) * SLICE_WIDTH * BLOCK_SIZE + (canvas.width/2 - player.width/2 - player.x));
+    }
+
+    drawPlayer();
+}
+
+// Controls
+document.addEventListener("keydown", e => {
+    if (e.key === "ArrowRight") movePlayer(1,0);
+    if (e.key === "ArrowLeft") movePlayer(-1,0);
+    if (e.key === "ArrowUp") movePlayer(0,-1);
+    if (e.key === "ArrowDown") movePlayer(0,1);
+    if (e.key === "w") scrollSlice(1);
+    if (e.key === "s") scrollSlice(-1);
+});
+
+// Scroll between slices
+function scrollSlice(dir) {
+    player.slice += dir;
+}
+
+// Move player with collision
+function movePlayer(dx, dy) {
+    let newX = player.x + dx * BLOCK_SIZE;
+    let newY = player.y + dy * BLOCK_SIZE;
+    const slice = slices[player.slice] || [];
+    // Collision detection
+    const gridX = Math.floor((newX + player.width/2) / BLOCK_SIZE);
+    const gridY = Math.floor((newY + player.height/2) / BLOCK_SIZE);
+    if (slice[gridX] && slice[gridX][gridY] !== "air") return;
+    player.x = newX;
+    player.y = newY;
+}
+
+// Game loop
 function gameLoop() {
-    updatePlayer();
-    drawSlice(player.z);
+    render();
     requestAnimationFrame(gameLoop);
 }
 
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowLeft') {
-        if (!isSolid(player.x - 1, Math.floor(player.y), player.z)) player.x--;
-    }
-    if (e.key === 'ArrowRight') {
-        if (!isSolid(player.x + 1, Math.floor(player.y), player.z)) player.x++;
-    }
-    if (e.key === 'ArrowUp') {
-        if (isSolid(player.x, Math.floor(player.y - 1), player.z)) player.dy = -10;
-    }
-    if (e.key === 'w') {
-        if (player.z < SLICE_COUNT - 1) player.z++; // forward slice
-    }
-    if (e.key === 's') {
-        if (player.z > 0) player.z--; // backward slice
-    }
-});
-
-generateWorld();
-player.y = 10;
+// Initialize
+generateSlice(0);
 gameLoop();
