@@ -113,9 +113,6 @@ let player = {
     targetZ: spawnZ
 };
 
-// Camera
-let cameraX = 0;
-
 // Controls
 const keys = {};
 document.addEventListener('keydown', e=>keys[e.key]=true);
@@ -182,16 +179,12 @@ function update(){
         player.targetZ = spawnZ;
     }
 
-    // Update camera
-    cameraX = player.x - canvas.width/2 + player.w/2;
-
     draw();
     requestAnimationFrame(update);
 }
 
 // Draw
 function draw(){
-    // Sky
     ctx.fillStyle = '#87CEFA';
     ctx.fillRect(0,0,canvas.width,canvas.height);
 
@@ -200,7 +193,7 @@ function draw(){
     for(let x=0;x<CHUNK_SIZE;x++){
         for(let y=0;y<MAX_HEIGHT;y++){
             let block = world[x][y][sliceZ];
-            let bx = x*BLOCK_SIZE - cameraX;
+            let bx = x*BLOCK_SIZE;
             let by = canvas.height-(y+1)*BLOCK_SIZE;
 
             // Draw block or cave black
@@ -213,7 +206,6 @@ function draw(){
                     let rightSlice = sliceZ+1<CHUNK_SIZE?world[x][y][sliceZ+1]:null;
                     let showLeaf = true;
 
-                    // Only show leaves if part of tree slice
                     if((leftSlice && leftSlice.type==='leaves')||(rightSlice && rightSlice.type==='leaves')){
                         showLeaf=true;
                     }
@@ -227,7 +219,6 @@ function draw(){
                     ctx.fillRect(bx,by,BLOCK_SIZE,BLOCK_SIZE);
                 }
             } else if(y < topHeight[x][sliceZ]){
-                // Cave black
                 ctx.fillStyle = '#000000';
                 ctx.fillRect(bx,by,BLOCK_SIZE,BLOCK_SIZE);
             }
@@ -235,12 +226,11 @@ function draw(){
     }
 
     // Player
-    ctx.fillStyle = '#008080'; // lower teal
-    ctx.fillRect(player.x - cameraX, player.y + player.h/2, player.w, player.h/2);
-    ctx.fillStyle = '#D2B48C'; // upper tan
-    ctx.fillRect(player.x - cameraX, player.y, player.w, player.h/2);
+    ctx.fillStyle = '#008080';
+    ctx.fillRect(player.x, player.y + player.h/2, player.w, player.h/2);
+    ctx.fillStyle = '#D2B48C';
+    ctx.fillRect(player.x, player.y, player.w, player.h/2);
 
-    // Slice info
     ctx.fillStyle = '#000';
     ctx.font = '16px Arial';
     ctx.fillText('Slice: ' + (sliceZ+1),10,20);
