@@ -18,25 +18,73 @@ const COLORS = {
     placed: '#AAAAAA'
 };
 
-// Create ground blocks for each slice
+// Simple pseudo-noise function for smooth terrain
+function noise(x) {
+    return (Math.sin(x * 0.1) + Math.sin(x * 0.05 + 2) * 0.5 + 1) * 0.5;
+}
+
+// Generate terrain per slice
 let blocks = [];
 for (let z = 0; z < SLICES; z++) {
+    let terrainHeight = [];
     for (let x = 0; x < Math.ceil(canvas.width / BLOCK_SIZE); x++) {
-        let type = ['grass', 'dirt', 'stone'][Math.floor(Math.random() * 3)];
-        blocks.push({
-            x: x * BLOCK_SIZE,
-            y: canvas.height - BLOCK_SIZE,
-            z: z,
-            type: type,
-            solid: true
-        });
+        let baseHeight = Math.floor(noise(x + z*100) * 10) + 5; // 5–15 blocks tall
+        // Water dip
+        if (Math.random() < 0.08) baseHeight -= Math.floor(Math.random() * 3); 
+        terrainHeight[x] = baseHeight;
+
+        // Place blocks
+        for (let y = 0; y < baseHeight; y++) {
+            let type = 'stone';
+            if (y >= baseHeight - 3 && y < baseHeight - 1) type = 'dirt';
+            else if (y === baseHeight - 1) type = 'grass';
+            blocks.push({x: x*BLOCK_SIZE, y: canvas.height - (y+1)*BLOCK_SIZE, z:z, type:type, solid:true});
+        }
+
+        // Place water if dip
+        if (baseHeight < 8) {
+            blocks.push({x: x*BLOCK_SIZE, y: canvas.height - baseHeight*BLOCK_SIZE, z:z, type:'water', solid:false});
+        }
+
+        // Random tree spawn on grass
+        if (Math.random() < 0.08) {
+            // Trunk height 3-4
+            let trunkHeight = 3 + Math.floor(Math.random()*2);
+            for (let t = 0; t < trunkHeight; t++) {
+                blocks.push({
+                    x: x*BLOCK_SIZE,
+                    y: canvas.height - (baseHeight + t)*BLOCK_SIZE,
+                    z: z,
+                    type:'wood',
+                    solid:true
+                });
+            }
+            // Leaves cube 3x3x3
+            for (let lx=-1; lx<=1; lx++){
+                for (let ly=0; ly<3; ly++){
+                    for (let lz=-1; lz<=1; lz++){
+                        let leafX = x + lx;
+                        let leafZ = z + lz;
+                        if (leafX >=0 && leafZ >=0 && leafZ < SLICES) {
+                            blocks.push({
+                                x: leafX*BLOCK_SIZE,
+                                y: canvas.height - (baseHeight + trunkHeight + ly)*BLOCK_SIZE,
+                                z: leafZ,
+                                type:'leaves',
+                                solid:false
+                            });
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
-// Humanoid player (~2 blocks tall)
+// Player (~2 blocks tall)
 let player = {
     x: 100,
-    y: canvas.height - BLOCK_SIZE*2 - 2, // slightly above ground
+    y: canvas.height - BLOCK_SIZE*2 - 2,
     w: BLOCK_SIZE,
     h: 30,
     vy: 0,
