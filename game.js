@@ -7,7 +7,7 @@ canvas.height = window.innerHeight;
 const BLOCK_SIZE = 16;
 const SLICES = 6;
 
-// Define block colors
+// Block colors
 const COLORS = {
     grass: '#228B22',
     dirt: '#8B4513',
@@ -15,15 +15,14 @@ const COLORS = {
     leaves: '#90EE90',
     wood: '#D2B48C',
     water: '#1E90FF',
-    placed: '#AAAAAA' // default for placed blocks
+    placed: '#AAAAAA'
 };
 
-// Create world blocks
+// Create ground blocks for each slice
 let blocks = [];
 for (let z = 0; z < SLICES; z++) {
-    for (let x = 0; x < 50; x++) {
-        // Randomly choose a ground block type for variety
-        let type = ['grass','dirt','stone'][Math.floor(Math.random()*3)];
+    for (let x = 0; x < Math.ceil(canvas.width / BLOCK_SIZE); x++) {
+        let type = ['grass', 'dirt', 'stone'][Math.floor(Math.random() * 3)];
         blocks.push({
             x: x * BLOCK_SIZE,
             y: canvas.height - BLOCK_SIZE,
@@ -34,10 +33,10 @@ for (let z = 0; z < SLICES; z++) {
     }
 }
 
-// Player (~2 blocks tall)
+// Humanoid player (~2 blocks tall)
 let player = {
     x: 100,
-    y: canvas.height - BLOCK_SIZE*2, // start above ground
+    y: canvas.height - BLOCK_SIZE*2 - 2, // slightly above ground
     w: BLOCK_SIZE,
     h: 30,
     vy: 0,
@@ -51,7 +50,7 @@ const keys = {};
 document.addEventListener('keydown', e => keys[e.key] = true);
 document.addEventListener('keyup', e => keys[e.key] = false);
 
-// Slice shift
+// Slice shift with scroll
 window.addEventListener('wheel', e => {
     player.targetZ += Math.sign(e.deltaY);
     if(player.targetZ < 0) player.targetZ = 0;
